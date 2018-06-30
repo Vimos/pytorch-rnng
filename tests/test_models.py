@@ -1,12 +1,11 @@
-from nltk.tree import Tree
-from torch.autograd import Variable
 import pytest
 import torch
 import torch.nn as nn
+from nltk.tree import Tree
+from torch.autograd import Variable
 
 from rnng.actions import NT, REDUCE, SHIFT, get_nonterm
 from rnng.models import DiscRNNG, EmptyStackError, StackLSTM, log_softmax
-
 
 torch.manual_seed(12345)
 
@@ -178,7 +177,7 @@ def test_log_softmax_without_restrictions():
 
     assert isinstance(outputs, Variable)
     assert outputs.size() == inputs.size()
-    assert all(x == pytest.approx(1.) for x in outputs.exp().sum(dim=1).data)
+    assert all(x == pytest.approx(1.) for x in outputs.exp().sum(dim=1).data.tolist())
 
 
 def test_log_softmax_with_restrictions():
@@ -307,7 +306,7 @@ class TestDiscRNNG(object):
         assert len(parser.word2encoder) == 2
         assert isinstance(parser.word2encoder[0], nn.Linear)
         assert parser.word2encoder[0].in_features == (
-            parser.word_embedding_size + parser.pos_embedding_size
+                parser.word_embedding_size + parser.pos_embedding_size
         )
         assert parser.word2encoder[0].out_features == parser.hidden_size
         assert parser.word2encoder[0].bias is not None
@@ -383,7 +382,7 @@ class TestDiscRNNG(object):
         llh = parser(words, pos_tags, actions)
 
         assert isinstance(llh, Variable)
-        assert llh.size() == (1,)
+        assert llh.size() == torch.Size([])
         llh.backward()
         assert parser.finished
 
@@ -394,7 +393,7 @@ class TestDiscRNNG(object):
             NT('S'), SHIFT, SHIFT, SHIFT, SHIFT])
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_shift_when_no_open_nt_in_the_stack(self):
         words = self.make_words()
@@ -402,7 +401,7 @@ class TestDiscRNNG(object):
         actions = self.make_actions([SHIFT])
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_reduce_when_tos_is_an_open_nt(self):
         words = self.make_words()
@@ -410,7 +409,7 @@ class TestDiscRNNG(object):
         actions = self.make_actions([NT('S'), REDUCE])
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_reduce_when_only_single_open_nt_and_buffer_is_not_empty(self):
         words = self.make_words()
@@ -418,7 +417,7 @@ class TestDiscRNNG(object):
         actions = self.make_actions([NT('S'), SHIFT, REDUCE])
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_push_nt_when_buffer_is_empty(self):
         words = self.make_words()
@@ -427,16 +426,16 @@ class TestDiscRNNG(object):
             NT('S'), SHIFT, SHIFT, SHIFT, NT('NP')])
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_push_nt_when_maximum_number_of_open_nt_is_reached(self):
         DiscRNNG.MAX_OPEN_NT = 2
         words = self.make_words()
         pos_tags = self.make_pos_tags()
-        actions = self.make_actions([NT('S')] * (DiscRNNG.MAX_OPEN_NT+1))
+        actions = self.make_actions([NT('S')] * (DiscRNNG.MAX_OPEN_NT + 1))
         parser = self.make_parser()
         llh = parser(words, pos_tags, actions)
-        assert llh.exp().data[0] == pytest.approx(0, abs=1e-7)
+        assert llh.exp().item() == pytest.approx(0, abs=1e-7)
 
     def test_forward_with_bad_dimensions(self):
         words = Variable(torch.randn(2, 3)).long()

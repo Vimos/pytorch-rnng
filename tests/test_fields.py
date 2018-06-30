@@ -62,6 +62,6 @@ class TestActionField(object):
 
         tensor = field.numericalize([arr], device=-1)
 
-        assert tensor.squeeze().data.tolist() == [
+        assert tensor.squeeze(dim=1).data.tolist() == [
             field.vocab.stoi[NT(field.nonterm_field.unk_token)]
         ]

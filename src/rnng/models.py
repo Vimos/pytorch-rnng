@@ -1,12 +1,12 @@
-from typing import List, NamedTuple, Optional, Sequence, Sized, Tuple, Union, cast
 from typing import Dict  # noqa
+from typing import List, NamedTuple, Optional, Sequence, Sized, Tuple, Union, cast
 
-from nltk.tree import Tree
-from torch.autograd import Variable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
+from nltk.tree import Tree
+from torch.autograd import Variable
 
 from rnng.typing import WordId, NTId, ActionId
 
@@ -55,12 +55,12 @@ class StackLSTM(nn.Module, Sized):
     def reset_parameters(self) -> None:
         for name, param in self.lstm.named_parameters():
             if name.startswith('weight'):
-                init.orthogonal(param)
+                init.orthogonal_(param)
             else:
                 assert name.startswith('bias')
-                init.constant(param, 0.)
-        init.constant(self.h0, 0.)
-        init.constant(self.c0, 0.)
+                init.constant_(param, 0.)
+        init.constant_(self.h0, 0.)
+        init.constant_(self.c0, 0.)
 
     def forward(self, inputs: Variable) -> Tuple[Variable, Variable]:
         if inputs.size() != (self.input_size,):
@@ -102,7 +102,7 @@ class StackLSTM(nn.Module, Sized):
 
 def log_softmax(inputs: Variable, restrictions: Optional[torch.LongTensor] = None) -> Variable:
     if restrictions is None:
-        return F.log_softmax(inputs)
+        return F.log_softmax(inputs, dim=1)
 
     if restrictions.dim() != 1:
         raise ValueError(f'restrictions must have dimension of 1, got {restrictions.dim()}')
@@ -110,7 +110,7 @@ def log_softmax(inputs: Variable, restrictions: Optional[torch.LongTensor] = Non
     addend = Variable(
         inputs.data.new(inputs.size()).zero_().index_fill_(
             inputs.dim() - 1, restrictions, -float('inf')))
-    return F.log_softmax(inputs + addend)
+    return F.log_softmax(inputs + addend, dim=1)
 
 
 class StackElement(NamedTuple):
@@ -222,7 +222,7 @@ class DiscRNNG(nn.Module):
     @property
     def finished(self) -> bool:
         return len(self._stack) == 1 and not self._stack[0].is_open_nt \
-            and len(self._buffer) == 0
+               and len(self._buffer) == 0
 
     def reset_parameters(self) -> None:
         # Embeddings
@@ -240,28 +240,28 @@ class DiscRNNG(nn.Module):
             lstm = getattr(self, f'{name}_composer')
             for pname, pval in lstm.named_parameters():
                 if pname.startswith('weight'):
-                    init.orthogonal(pval)
+                    init.orthogonal_(pval)
                 else:
                     assert pname.startswith('bias')
-                    init.constant(pval, 0.)
+                    init.constant_(pval, 0.)
 
         # Transformations
         gain = init.calculate_gain('relu')
         for name in 'word nt action'.split():
             layer = getattr(self, f'{name}2encoder')
-            init.xavier_uniform(layer[0].weight, gain=gain)
-            init.constant(layer[0].bias, 1.)
-        init.xavier_uniform(self.fwdbwd2composed[0].weight, gain=gain)
-        init.constant(self.fwdbwd2composed[0].bias, 1.)
-        init.xavier_uniform(self.encoders2summary[1].weight, gain=gain)
-        init.constant(self.encoders2summary[1].bias, 1.)
-        init.xavier_uniform(self.summary2actionlogprobs.weight)
-        init.constant(self.summary2actionlogprobs.bias, 0.)
+            init.xavier_uniform_(layer[0].weight, gain=gain)
+            init.constant_(layer[0].bias, 1.)
+        init.xavier_uniform_(self.fwdbwd2composed[0].weight, gain=gain)
+        init.constant_(self.fwdbwd2composed[0].bias, 1.)
+        init.xavier_uniform_(self.encoders2summary[1].weight, gain=gain)
+        init.constant_(self.encoders2summary[1].bias, 1.)
+        init.xavier_uniform_(self.summary2actionlogprobs.weight)
+        init.constant_(self.summary2actionlogprobs.bias, 0.)
 
         # Guards
         for name in 'stack buffer history'.split():
             guard = getattr(self, f'{name}_guard')
-            init.constant(guard, 0.)
+            init.constant_(guard, 0.)
 
     def forward(self,
                 words: Variable,
@@ -279,7 +279,7 @@ class DiscRNNG(nn.Module):
         for action in actions:
             log_probs = self._compute_action_log_probs()
             llh += log_probs[action]
-            action_id = action.data[0]
+            action_id = action.item()
             if action_id == self.SHIFT_ID:
                 if self._check_shift():
                     self._shift()
@@ -302,7 +302,7 @@ class DiscRNNG(nn.Module):
         self._start(words, pos_tags)
         while not self.finished:
             log_probs = self._compute_action_log_probs()
-            max_action_id = torch.max(log_probs, dim=0)[1].data[0]
+            max_action_id = torch.max(log_probs, dim=0)[1].item()
             if max_action_id == self.SHIFT_ID:
                 if self._check_shift():
                     self._shift()
@@ -417,8 +417,8 @@ class DiscRNNG(nn.Module):
 
     def _check_reduce(self) -> bool:
         tos_is_open_nt = len(self._stack) > 0 and self._stack[-1].is_open_nt
-        return self._num_open_nt > 0 and not tos_is_open_nt \
-            and not (self._num_open_nt < 2 and len(self._buffer) > 0)
+        return self._num_open_nt > 0 and not tos_is_open_nt and not (
+                self._num_open_nt < 2 and len(self._buffer) > 0)
 
     def _append_history(self, action_id: ActionId) -> None:
         assert action_id in self._action_emb
